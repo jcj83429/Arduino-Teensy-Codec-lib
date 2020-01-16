@@ -143,23 +143,60 @@ bool AudioPlaySdAac::setupMp4(void)
 	uint16_t channels = fread16(stsd.position + 8 + 0x20);
 	//uint16_t channels = 1;
 	//uint16_t bits		= fread16(stsd.position + 8 + 0x22); //not used
-	uint16_t samplerate = fread32(stsd.position + 8 + 0x26);
+	samplerate = fread32(stsd.position + 8 + 0x26);
 
 	setupDecoder(channels, samplerate, AAC_PROFILE_LC);
 
+	// parse stsc for chunk sizes seeking
+	stscPosition = findMp4Atom("stsc", stbl + 8).position;
+	uint32_t stscEntries = fread32(stscPosition + 12);
+	Serial.print("stsc has ");
+	Serial.print(stscEntries);
+	Serial.println(" entries");
+	for(uint32_t i=0; i<stscEntries; i++) {
+		uint32_t first_chunk = fread32(stscPosition + 16 + i * 12);
+		uint32_t samples_per_chunk = fread32(stscPosition + 16 + i * 12 + 4);
+		// don't read the sample_description_index
+		Serial.print("  first_chunk=");
+		Serial.print(first_chunk);
+		Serial.print("  samples_per_chunk=");
+		Serial.println(samples_per_chunk);
+	}
+
+	// parse stts for "sample" (actually AAC block) size for seeking
+	sttsPosition = findMp4Atom("stts", stbl + 8).position;
+	uint32_t sttsEntries = fread32(sttsPosition + 12);
+	for(uint32_t i=0; i<sttsEntries; i++) {
+		uint32_t sample_count = fread32(sttsPosition + 16 + i * 8);
+		uint32_t sample_delta = fread32(sttsPosition + 16 + i * 8 + 4);
+		// don't read the sample_description_index
+		Serial.print("  sample_count=");
+		Serial.print(sample_count);
+		Serial.print("  sample_delta=");
+		Serial.println(sample_delta);
+	}
+
 	//stco - chunk offset atom:
-	uint32_t stco = findMp4Atom("stco", stbl + 8).position;
+	stcoPosition = findMp4Atom("stco", stbl + 8).position;
 
 	//number of chunks:
-	uint32_t nChunks = fread32(stco + 8 + 0x04);
+	uint32_t nChunks = fread32(stcoPosition + 8 + 0x04);
 	//first entry from chunk table:
-	firstChunk = fread32(stco + 8 + 0x08);
+	firstChunk = fread32(stcoPosition + 8 + 0x08);
 	//last entry from chunk table:
-	lastChunk = fread32(stco + 8 + 0x04 + nChunks * 4);
+	lastChunk = fread32(stcoPosition + 8 + 0x04 + nChunks * 4);
 
 	if (nChunks == 1) {
 		_ATOM mdat =  findMp4Atom("mdat", 0);
 		lastChunk = mdat.size;
+	}
+	
+	for(uint32_t i=0; i<nChunks; i++) {
+		uint32_t chunk_offset = fread32(stcoPosition + 16 + i * 4);
+		Serial.print("chunk ");
+		Serial.print(i);
+		Serial.print(" offset ");
+		Serial.println(chunk_offset);
 	}
 
 #if 0
@@ -272,6 +309,87 @@ int AudioPlaySdAac::play(void){
 //	Serial.printf("RAM: %d\r\n",ram-freeRam());
 #endif
     return lastError;
+}
+
+bool AudioPlaySdAac::seek(uint32_t timesec) {
+	if (isRAW) {
+		return false; // ADTS seeking not implemented
+	}
+
+	pause(true);
+
+	// parse stts for "sample" (actually AAC block) size for seeking
+	uint32_t sttsEntries = fread32(sttsPosition + 12);
+	if (sttsEntries != 1) {
+		Serial.println("seek fail: stts has no entries or too many entries");
+		return false;
+	}
+	uint32_t sample_count = fread32(sttsPosition + 16);
+	uint32_t sample_delta = fread32(sttsPosition + 16 + 4);
+	uint32_t aacBlockNum = timesec * samplerate / sample_delta;
+	
+	if (aacBlockNum >= sample_count) {
+		Serial.println("seek fail: trying to seek past end of file");
+	}
+	
+	Serial.print("going to block ");
+	Serial.println(aacBlockNum);
+	
+	// parse stsc for chunk sizes seeking
+	uint32_t stscEntries = fread32(stscPosition + 12);
+	Serial.print("stsc has ");
+	Serial.print(stscEntries);
+	Serial.println(" entries");
+	if (stscEntries < 1) {
+		Serial.println("seek fail: stsc has no entries");
+	}
+
+	uint32_t cumulativeBlocks = 0;
+	uint32_t last_first_chunk, last_samples_per_chunk;
+	for(uint32_t i=0; i<stscEntries; i++) {
+		uint32_t first_chunk = fread32(stscPosition + 16 + i * 12);
+		uint32_t samples_per_chunk = fread32(stscPosition + 16 + i * 12 + 4);
+		// don't read the sample_description_index
+		Serial.print("  first_chunk=");
+		Serial.print(first_chunk);
+		Serial.print("  samples_per_chunk=");
+		Serial.println(samples_per_chunk);
+		if (i > 0) {
+			uint32_t blocksInLastChunk = (first_chunk - last_first_chunk) * last_samples_per_chunk;
+			if (cumulativeBlocks + blocksInLastChunk > aacBlockNum) {
+				// last chunk is the chunk
+				break;
+			}
+			cumulativeBlocks += blocksInLastChunk;
+		}
+		last_first_chunk = first_chunk;
+		last_samples_per_chunk = samples_per_chunk;
+	}
+	Serial.print("cumulativeBlocks ");Serial.println(cumulativeBlocks);
+	// chunks in mp4 are 1-indexed. That's just wrong. We subtract 1 to make it 0-indexed.
+	uint32_t theChunk = (aacBlockNum - cumulativeBlocks) / last_samples_per_chunk + last_first_chunk - 1;
+	Serial.print("go to chunk ");Serial.println(theChunk);
+
+	uint32_t chunk_offset = fread32(stcoPosition + 16 + theChunk * 4);
+	Serial.print("chunk_offset ");Serial.println(chunk_offset);
+	
+	if (!fseek(chunk_offset)) {
+		Serial.println("seek fail: fseek failed");
+		return false;
+	}
+	// clear AAC stream buffer and decoding_block data
+	decoded_length[decoding_block] = 0;
+	sd_p = sd_buf;
+	sd_left = fillReadBuffer(sd_buf, sd_buf, 0, AAC_SD_BUF_SIZE);
+	if (!sd_left) {
+		Serial.println("fillReadBuffer failed");
+		return false;
+	}
+	decoding_state = 1; // we refilled the buffer
+	for (int i=0; i< DECODE_NUM_STATES; i++) decodeAac();
+	
+	pause(false);
+	return true;
 }
 
 //runs in ISR

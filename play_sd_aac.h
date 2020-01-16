@@ -57,6 +57,7 @@ public:
 	void stop(void);
 	using AudioCodec::play;
 	int play(void);
+	bool seek(uint32_t timesec);
 
 	uint32_t lengthMillis(void);
 
@@ -75,6 +76,8 @@ protected:
 	uintptr_t		play_pos;
 	size_t 			size_id3;
 	uint32_t 		firstChunk, lastChunk;	//for MP4/M4A //TODO: use for ID3 too
+	uint32_t		samplerate;
+	uint32_t		stscPosition, stcoPosition, sttsPosition; // position of atoms used for seeking
 	unsigned		duration;
 
 	HAACDecoder		hAACDecoder;
