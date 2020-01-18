@@ -345,7 +345,7 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 	}
 
 	uint32_t cumulativeBlocks = 0;
-	uint32_t last_first_chunk, last_samples_per_chunk;
+	uint32_t last_first_chunk = 1, last_samples_per_chunk = 1; // initialize to avoid compiler warning
 	for(uint32_t i=0; i<stscEntries; i++) {
 		uint32_t first_chunk = fread32(stscPosition + 16 + i * 12);
 		uint32_t samples_per_chunk = fread32(stscPosition + 16 + i * 12 + 4);
