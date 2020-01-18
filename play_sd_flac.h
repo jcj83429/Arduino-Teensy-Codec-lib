@@ -55,6 +55,10 @@ public:
 	using AudioCodec::play;
 	int play(void);
 
+	// suspend decoding but continue to output already decoded samples
+	void suspendDecoding(void);
+	void resumeDecoding(void);
+
 	uint32_t lengthMillis(void);
 	unsigned sampleRate(void);
 
@@ -63,6 +67,7 @@ protected:
 	AudioBuffer *audiobuffer;
 	uint16_t	minbuffers = 0;
 	static FLAC__StreamDecoder	*hFLACDecoder ;
+	bool decodingSuspended = false;
 
 	friend FLAC__StreamDecoderWriteStatus write_callback(const FLAC__StreamDecoder *decoder, const FLAC__Frame *frame, const FLAC__int32 *const buffer[], void *client_data);
 	friend FLAC__StreamDecoderReadStatus read_callback(const FLAC__StreamDecoder *decoder, FLAC__byte buffer[], size_t *bytes, void *client_data);
@@ -73,6 +78,7 @@ protected:
 	friend void error_callback(const FLAC__StreamDecoder *decoder, FLAC__StreamDecoderErrorStatus status, void *client_data);
 
 	void update(void);
+	void checkAndFillBuffer(void);
 	friend void decodeFlac(void) ;
 
 

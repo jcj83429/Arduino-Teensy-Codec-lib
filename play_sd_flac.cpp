@@ -433,6 +433,12 @@ void AudioPlaySdFlac::update(void)
 		}
 	}
 
+	if (decodingSuspended) return;
+	checkAndFillBuffer();
+}
+
+void AudioPlaySdFlac::checkAndFillBuffer(void)
+{
 	if (audiobuffer->getBufsize() > 0 && audiobuffer->available() < minbuffers) return;
 
 #ifndef FLAC_USE_SWI
@@ -447,6 +453,17 @@ void AudioPlaySdFlac::update(void)
 	if (!NVIC_IS_ACTIVE(IRQ_AUDIOCODEC))
 			NVIC_TRIGGER_INTERRUPT(IRQ_AUDIOCODEC);
 #endif
+}
+
+void AudioPlaySdFlac::suspendDecoding(void)
+{
+	decodingSuspended = true;
+}
+
+void AudioPlaySdFlac::resumeDecoding(void)
+{
+	decodingSuspended = false;
+	checkAndFillBuffer();
 }
 
 void decodeFlac(void)
