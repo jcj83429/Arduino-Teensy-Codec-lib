@@ -103,7 +103,7 @@ public:
 	virtual void stop() = 0;
 	virtual int play() = 0;
 	bool isPlaying(void) {return playing > 0;}
-	unsigned positionMillis(void) { return (AUDIO_SAMPLE_RATE_EXACT / 1000) * samples_played;}
+	unsigned positionMillis(void) { return samples_played * 1000 / AUDIOCODECS_SAMPLE_RATE;}
 	unsigned lengthMillis(void) {return max(fsize() / (bitrate / 8 ) * 1000,  positionMillis());} //Ignores VBR
 	int channels(void) {return _channels;}
 	int bitRate(void) {return bitrate;}

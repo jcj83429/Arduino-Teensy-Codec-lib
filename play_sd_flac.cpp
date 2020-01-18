@@ -74,7 +74,7 @@ void AudioPlaySdFlac::stop(void)
 uint32_t AudioPlaySdFlac::lengthMillis(void)
 {
 	if (hFLACDecoder != NULL)
-		return (AUDIO_SAMPLE_RATE_EXACT / 1000) * FLAC__stream_decoder_get_total_samples(hFLACDecoder);
+		return FLAC__stream_decoder_get_total_samples(hFLACDecoder) * 1000 / AUDIOCODECS_SAMPLE_RATE;
 	else
 		return 0;
 }
@@ -153,6 +153,41 @@ int AudioPlaySdFlac::play(void)
 PlayErr:
 	stop();
 	return lastError;
+}
+
+bool AudioPlaySdFlac::seek(uint32_t timesec)
+{
+	pause(true);
+	uint64_t sample = timesec * AUDIOCODECS_SAMPLE_RATE; // hardcode 44100 for now
+	sample &= ~(AUDIO_BLOCK_SAMPLES-1); // the write callback can't handle frame sizes that are not multiples of AUDIO_BLOCK_SAMPLES
+	bool seekResult = FLAC__stream_decoder_seek_absolute(hFLACDecoder, sample);
+	if (seekResult) {
+		goto done;
+	}
+	// seek failed, flush decoder and try again
+	FLAC__StreamDecoderState state;
+	state = FLAC__stream_decoder_get_state(hFLACDecoder);
+	Serial.print("FLAC seek failed, decoder state: ");
+	Serial.println(state);
+	
+	seekResult = FLAC__stream_decoder_flush(hFLACDecoder);
+	if (seekResult) {
+		Serial.println("FLAC flush succeeded");
+		goto done;
+	}
+	// flush failed
+	state = FLAC__stream_decoder_get_state(hFLACDecoder);
+	Serial.print("FLAC flush failed, decoder state: ");
+	Serial.println(state);
+
+done:
+	// clear and refill audiobuffer
+	while(audiobuffer->used()){
+		audiobuffer->get();
+	}
+	checkAndFillBuffer();
+	pause(false);
+	return seekResult;
 }
 
 __attribute__ ((optimize("O2")))
@@ -283,6 +318,11 @@ FLAC__StreamDecoderWriteStatus write_callback(const FLAC__StreamDecoder *decoder
 		obj->_channels = chan;
 		obj->audiobuffer->allocMem(FLAC_BUFFERS(numbuffers));
 		obj->minbuffers	= numbuffers;
+	}
+
+	if (frame->header.number_type == FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER && obj->audiobuffer->used() == 0) {
+		// we get here after seeking or starting playback. update samples_played.
+		obj->samples_played = frame->header.number.sample_number;
 	}
 
 	if ( frame->header.sample_rate != AUDIOCODECS_SAMPLE_RATE ||

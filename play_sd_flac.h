@@ -54,6 +54,7 @@ public:
 	void stop(void);
 	using AudioCodec::play;
 	int play(void);
+	bool seek(uint32_t timesec);
 
 	// suspend decoding but continue to output already decoded samples
 	void suspendDecoding(void);
