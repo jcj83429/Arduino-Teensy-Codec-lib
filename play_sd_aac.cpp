@@ -368,6 +368,9 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 	Serial.print("cumulativeBlocks ");Serial.println(cumulativeBlocks);
 	// chunks in mp4 are 1-indexed. That's just wrong. We subtract 1 to make it 0-indexed.
 	uint32_t theChunk = (aacBlockNum - cumulativeBlocks) / last_samples_per_chunk + last_first_chunk - 1;
+	// samples_played = block size * rounded block num
+	samples_played = sample_delta * (aacBlockNum - ((aacBlockNum - cumulativeBlocks) % last_samples_per_chunk));
+	
 	Serial.print("go to chunk ");Serial.println(theChunk);
 
 	uint32_t chunk_offset = fread32(stcoPosition + 16 + theChunk * 4);
@@ -378,7 +381,6 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 		return false;
 	}
 	// clear AAC stream buffer and decoding_block data
-	decoded_length[decoding_block] = 0;
 	sd_p = sd_buf;
 	sd_left = fillReadBuffer(sd_buf, sd_buf, 0, AAC_SD_BUF_SIZE);
 	if (!sd_left) {
@@ -386,6 +388,11 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 		return false;
 	}
 	decoding_state = 1; // we refilled the buffer
+	
+	decoded_length[decoding_block] = 0;
+	for (int i=0; i< DECODE_NUM_STATES; i++) decodeAac();
+	decoding_block = 1 - decoding_block;
+	decoded_length[decoding_block] = 0;
 	for (int i=0; i< DECODE_NUM_STATES; i++) decodeAac();
 	
 	pause(false);
