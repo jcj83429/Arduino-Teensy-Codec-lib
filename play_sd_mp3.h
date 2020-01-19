@@ -52,6 +52,9 @@ public:
 	void stop(void);
 	using AudioCodec::play;
 	int play(void);
+	bool seek(uint32_t timsec);
+
+	uint32_t lengthMillis(void);
 
 protected:
 	uint8_t			*sd_buf;

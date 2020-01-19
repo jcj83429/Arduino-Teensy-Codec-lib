@@ -43,7 +43,7 @@
 
 #include "play_sd_mp3.h"
 
-#define MP3_SD_BUF_SIZE	2048 								//Enough space for a complete stereo frame
+#define MP3_SD_BUF_SIZE	4096 								//Enough space for 2 complete stereo frames
 #define MP3_BUF_SIZE	(MAX_NCHAN * MAX_NGRAN * MAX_NSAMP) //MP3 output buffer
 #define DECODE_NUM_STATES 2									//How many steps in decode() ?
 
@@ -153,6 +153,106 @@ int AudioPlaySdMp3::play(void)
 
 #endif
     return lastError;
+}
+
+bool AudioPlaySdMp3::seek(uint32_t timesec)
+{
+	if (!isPlaying()) {
+		return false;
+	}
+
+	pause(true);
+	
+	// offset calculation for CBR
+	uint64_t sizeWithoutID3 = fsize() - size_id3;
+	uint32_t targetOffset = size_id3 + sizeWithoutID3 * (timesec * 1000) / lengthMillis();
+	Serial.print("MP3 seeking to offset ");
+	Serial.println(targetOffset);
+	fseek(targetOffset);
+	
+	// clear and refill MP3 stream buffer
+	sd_p = sd_buf;
+	sd_left = fillReadBuffer(sd_buf, sd_buf, 0, MP3_SD_BUF_SIZE);
+	if (!sd_left) {
+		Serial.println("fillReadBuffer failed EOF?");
+		stop();
+		return true;
+	}
+	int validFrameFound = 0;
+	// Sometimes after one successful decode after seek, the next decode can still fail.
+	// I don't know if it's possible for a decode to fail after 2 successful decodes, but I will require 3 consecutive successful decodes to be safe.
+	// The better way to handle it is to change decodeMp3 to not declare EOF as soon as it hits an error. For now this loop will do.
+	while(validFrameFound < 3) {
+		// MP3_SD_BUF_SIZE is not enough to fit 2 320kbps frames.
+		// So advance to next MP3 frame and fill buffer again to avoid buffer underflow in decoding.
+		int offset = MP3FindSyncWord(sd_p, sd_left);
+		if (offset < 0) {
+			Serial.println("No sync"); //no error at end of file
+			stop();
+			return true;
+		} else {
+			Serial.print("sync at buffer offset ");
+			Serial.println(offset);
+			sd_p += offset;
+			sd_left -= offset;
+			
+			// The only way to fully know if we found a valid frame is by trying to decode it
+			int decode_res = MP3Decode(hMP3Decoder, &sd_p, (int*)&sd_left, buf[decoding_block], 0);
+			if (decode_res) {
+				Serial.print("decode error ");
+				Serial.println(decode_res);
+				if (decode_res == ERR_MP3_INVALID_FRAMEHEADER) {
+					// keep going to find next frameheader
+					sd_p += 2;
+					sd_left -= 2;
+				}
+				validFrameFound = 0;
+			} else {
+				// don't throw away the decoding result
+				MP3GetLastFrameInfo(hMP3Decoder, &mp3FrameInfo);
+				decoded_length[decoding_block] = mp3FrameInfo.outputSamps;
+				decoding_block = 1 - decoding_block;
+				validFrameFound++;
+			}
+		}
+
+		sd_left = fillReadBuffer(sd_buf, sd_p, sd_left, MP3_SD_BUF_SIZE);
+		if (!sd_left) {
+			Serial.println("fillReadBuffer failed EOF?");
+			stop();
+			return true;
+		}
+		sd_p = sd_buf;
+	}
+
+	decoding_state = 1; // we refilled the buffer
+	
+	decoded_length[decoding_block] = 0;
+	for (int i=0; i< DECODE_NUM_STATES; i++) {
+		if (isPlaying()) {
+			decodeMp3();
+			if (lastError) {
+				Serial.print("lastError ");
+				Serial.println(lastError);
+			}
+		}
+	}
+	
+	if (isPlaying()) {
+		pause(false);
+		return true;
+	} else {
+		Serial.print("lastError ");
+		Serial.println(lastError);
+		return false;
+	}
+}
+
+uint32_t AudioPlaySdMp3::lengthMillis()
+{
+	// for CBR
+	uint64_t sizeWithoutID3 = fsize() - size_id3;
+	return sizeWithoutID3 * 1000 / (mp3FrameInfo.bitrate / 8);
 }
 
 //runs in ISR
@@ -270,6 +370,7 @@ void decodeMp3(void)
 
 			int decode_res = MP3Decode(o->hMP3Decoder, &o->sd_p, (int*)&o->sd_left,o->buf[db], 0);
 
+			AudioPlaySdMp3::lastError = decode_res;
 			switch(decode_res)
 			{
 				case ERR_MP3_NONE:
@@ -286,7 +387,6 @@ void decodeMp3(void)
 
 				default :
 				{
-					AudioPlaySdMp3::lastError = decode_res;
 					eof = true;
 					break;
 				}

@@ -302,6 +302,7 @@ int MP3Decode(HMP3Decoder hMP3Decoder, unsigned char **inbuf, int *bytesLeft, sh
 	if (fhBytes < 0)	
 		return ERR_MP3_INVALID_FRAMEHEADER;		/* don't clear outbuf since we don't know size (failed to parse header) */
 	*inbuf += fhBytes;
+	*bytesLeft -= fhBytes;
 	
 #ifdef PROFILE
 	time = systime_get();
@@ -313,7 +314,7 @@ int MP3Decode(HMP3Decoder hMP3Decoder, unsigned char **inbuf, int *bytesLeft, sh
 		return ERR_MP3_INVALID_SIDEINFO;
 	}
 	*inbuf += siBytes;
-	*bytesLeft -= (fhBytes + siBytes);
+	*bytesLeft -= siBytes;
 #ifdef PROFILE
 	time = systime_get() - time;
 	printf("UnpackSideInfo: %i ms\n", time);
