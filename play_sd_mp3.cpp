@@ -43,7 +43,7 @@
 
 #include "play_sd_mp3.h"
 
-#define MP3_SD_BUF_SIZE	4096 								//Enough space for 2 complete stereo frames
+#define MP3_SD_BUF_SIZE	4096 								//Enough space for 2 complete stereo frames. If not using seeking, then only half of this is needed
 #define MP3_BUF_SIZE	(MAX_NCHAN * MAX_NGRAN * MAX_NSAMP) //MP3 output buffer
 #define DECODE_NUM_STATES 2									//How many steps in decode() ?
 
@@ -155,6 +155,20 @@ int AudioPlaySdMp3::play(void)
     return lastError;
 }
 
+uint32_t AudioPlaySdMp3::timeMsToOffset(uint32_t timeMs)
+{
+	// offset calculation for CBR
+	uint64_t sizeWithoutID3 = fsize() - size_id3;
+	return size_id3 + sizeWithoutID3 * timeMs / lengthMillis();
+}
+
+uint32_t AudioPlaySdMp3::offsetToTimeMs(uint32_t offset)
+{
+	// calculation for CBR
+	uint32_t sizeWithoutID3 = fsize() - size_id3;
+	return (uint64_t)(offset - size_id3) * lengthMillis() / sizeWithoutID3;
+}
+
 bool AudioPlaySdMp3::seek(uint32_t timesec)
 {
 	if (!isPlaying()) {
@@ -163,9 +177,7 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 
 	pause(true);
 	
-	// offset calculation for CBR
-	uint64_t sizeWithoutID3 = fsize() - size_id3;
-	uint32_t targetOffset = size_id3 + sizeWithoutID3 * (timesec * 1000) / lengthMillis();
+	uint32_t targetOffset = timeMsToOffset(timesec * 1000);
 	Serial.print("MP3 seeking to offset ");
 	Serial.println(targetOffset);
 	fseek(targetOffset);
@@ -237,6 +249,10 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 			}
 		}
 	}
+	
+	// we don't know where we are after all the retries, so calculate time from file offset
+	// hardcode 44100 for now
+	samples_played = (uint64_t)offsetToTimeMs(fposition() - MP3_SD_BUF_SIZE) * AUDIOCODECS_SAMPLE_RATE / 1000;
 	
 	if (isPlaying()) {
 		pause(false);

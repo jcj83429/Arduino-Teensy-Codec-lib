@@ -73,6 +73,8 @@ protected:
 	MP3FrameInfo	mp3FrameInfo;
 
 	void update(void);
+	uint32_t timeMsToOffset(uint32_t timeMs);
+	uint32_t offsetToTimeMs(uint32_t offset);
 	friend void decodeMp3(void);
 };
 
