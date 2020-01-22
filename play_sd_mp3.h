@@ -45,6 +45,7 @@
 #include "AudioStream.h"
 #include "spi_interrupt.h"
 #include "mp3/mp3dec.h"
+#include "DXHEAD/DXHEAD.h"
 
 class AudioPlaySdMp3 : public AudioCodec
 {
@@ -71,10 +72,12 @@ protected:
 
 	HMP3Decoder		hMP3Decoder;
 	MP3FrameInfo	mp3FrameInfo;
+	
+	uint32_t		vbr_total_frames; // for VBR files with xing header, get total frames from header
 
 	void update(void);
-	uint32_t timeMsToOffset(uint32_t timeMs);
-	uint32_t offsetToTimeMs(uint32_t offset);
+	uint32_t timeMsToOffset(uint32_t timeMs, uint8_t *toc);
+	uint32_t offsetToTimeMs(uint32_t offset, uint8_t *toc);
 	friend void decodeMp3(void);
 };
 

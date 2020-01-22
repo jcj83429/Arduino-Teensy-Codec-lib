@@ -24,3 +24,6 @@
 
 #include "mp3/huffman.c"
 #include "mp3/hufftabs.c"
+
+// VBR header parser
+#include "DXHEAD/DXHEAD.C"

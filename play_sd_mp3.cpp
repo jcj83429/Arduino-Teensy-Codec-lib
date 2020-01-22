@@ -123,6 +123,19 @@ int AudioPlaySdMp3::play(void)
 		stop();
 		return lastError;
 	}
+	
+	
+	// check and parse Xing header for VBR file duration
+	vbr_total_frames = 0;
+	int syncOffset = MP3FindSyncWord(sd_buf, sd_left);
+	if (syncOffset <= sd_left - 160) { // xing header is less than 160 bytes
+		XHEADDATA xingHeaderData;
+		xingHeaderData.toc = NULL; // not reading TOC right now
+		if(GetXingHeader(&xingHeaderData, sd_buf + syncOffset)){
+			Serial.println("found xing VBR header");
+			vbr_total_frames = xingHeaderData.frames;
+		}
+	}
 
 	_VectorsRam[IRQ_AUDIOCODEC + 16] = &decodeMp3;
 	initSwi();
@@ -155,18 +168,53 @@ int AudioPlaySdMp3::play(void)
     return lastError;
 }
 
-uint32_t AudioPlaySdMp3::timeMsToOffset(uint32_t timeMs)
+uint32_t AudioPlaySdMp3::timeMsToOffset(uint32_t timeMs, uint8_t *toc)
 {
-	// offset calculation for CBR
 	uint64_t sizeWithoutID3 = fsize() - size_id3;
-	return size_id3 + sizeWithoutID3 * timeMs / lengthMillis();
+	if (vbr_total_frames && toc) {
+		// use Xing DXHEAD for VBR
+		return size_id3 + SeekPoint(toc, sizeWithoutID3, 100.0 * timeMs / lengthMillis());
+	} else {
+		// offset calculation for CBR
+		return size_id3 + sizeWithoutID3 * timeMs / lengthMillis();
+	}
 }
 
-uint32_t AudioPlaySdMp3::offsetToTimeMs(uint32_t offset)
+uint32_t AudioPlaySdMp3::offsetToTimeMs(uint32_t offset, uint8_t *toc)
 {
-	// calculation for CBR
 	uint32_t sizeWithoutID3 = fsize() - size_id3;
-	return (uint64_t)(offset - size_id3) * lengthMillis() / sizeWithoutID3;
+	if (vbr_total_frames && toc) {
+		// use Xing DXHEAD for VBR
+		float tocValue = 256.0 * (offset - size_id3) / sizeWithoutID3;
+		int l = 0, h = 99, loffset = 0, hoffset = 255;
+		if (tocValue > toc[99]) {
+			// special case near end of file
+			l = 99;
+			loffset = toc[99];
+			h = 100;
+			hoffset = 256;
+		} else {
+			// do a binary search to find the toc entry that's just before the offset
+			while (h - l >= 2){
+				int mid = (h + l) / 2;
+				if (toc[mid] < tocValue) {
+					l = mid;
+					loffset = toc[mid];
+				} else if (toc[mid] > tocValue) {
+					h = mid;
+					hoffset = toc[mid];
+				} else {
+					// highly unlikely
+					return lengthMillis() * mid / 100;
+				}
+			}
+		}
+		Serial.print("l="); Serial.print(l); Serial.print(", h="); Serial.println(h);
+		return lengthMillis() * (l + (tocValue - loffset) / (hoffset - loffset) * (h - l)) / 100;
+	} else {
+		// calculation for CBR
+		return (uint64_t)(offset - size_id3) * lengthMillis() / sizeWithoutID3;
+	}
 }
 
 bool AudioPlaySdMp3::seek(uint32_t timesec)
@@ -177,7 +225,24 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 
 	pause(true);
 	
-	uint32_t targetOffset = timeMsToOffset(timesec * 1000);
+	uint8_t toc[100];
+	bool tocValid = false;
+	if (vbr_total_frames) {
+		// use TOC in VBR header for offset
+		fseek(size_id3);
+		fillReadBuffer(sd_buf, sd_buf, 0, MP3_SD_BUF_SIZE);
+		int syncOffset = MP3FindSyncWord(sd_buf, MP3_SD_BUF_SIZE);
+		if (syncOffset <= MP3_SD_BUF_SIZE - 160) {
+			XHEADDATA xingHeaderData;
+			xingHeaderData.toc = toc;
+			if(GetXingHeader(&xingHeaderData, sd_buf + syncOffset)){
+				Serial.println("using xing VBR header");
+				tocValid = true;
+			}
+		}
+	}
+	
+	uint32_t targetOffset = timeMsToOffset(timesec * 1000, tocValid ? toc : NULL);
 	Serial.print("MP3 seeking to offset ");
 	Serial.println(targetOffset);
 	fseek(targetOffset);
@@ -252,7 +317,7 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 	
 	// we don't know where we are after all the retries, so calculate time from file offset
 	// hardcode 44100 for now
-	samples_played = (uint64_t)offsetToTimeMs(fposition() - MP3_SD_BUF_SIZE) * AUDIOCODECS_SAMPLE_RATE / 1000;
+	samples_played = (uint64_t)offsetToTimeMs(fposition() - MP3_SD_BUF_SIZE, tocValid ? toc : NULL) * AUDIOCODECS_SAMPLE_RATE / 1000;
 	
 	if (isPlaying()) {
 		pause(false);
@@ -266,9 +331,14 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 
 uint32_t AudioPlaySdMp3::lengthMillis()
 {
-	// for CBR
-	uint64_t sizeWithoutID3 = fsize() - size_id3;
-	return sizeWithoutID3 * 1000 / (mp3FrameInfo.bitrate / 8);
+	if (vbr_total_frames) {
+		// for VBR
+		return (uint64_t)vbr_total_frames * mp3FrameInfo.outputSamps / mp3FrameInfo.nChans * 1000 / mp3FrameInfo.samprate;
+	} else {
+		// for CBR
+		uint64_t sizeWithoutID3 = fsize() - size_id3;
+		return sizeWithoutID3 * 1000 / (mp3FrameInfo.bitrate / 8);
+	}
 }
 
 //runs in ISR
