@@ -53,7 +53,7 @@ public:
 	void stop(void);
 	using AudioCodec::play;
 	int play(void);
-	bool seek(uint32_t timsec);
+	bool seek(uint32_t timesec);
 
 	uint32_t lengthMillis(void);
 
