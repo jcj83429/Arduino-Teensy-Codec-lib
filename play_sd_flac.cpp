@@ -141,6 +141,12 @@ int AudioPlaySdFlac::play(void)
 		goto PlayErr;
 	}
 
+	if (!FLAC__stream_decoder_process_single(hFLACDecoder))
+	{
+		lastError = ERR_CODEC_FORMAT;
+		goto PlayErr;
+	}
+
 #ifdef FLAC_USE_SWI
 	_VectorsRam[IRQ_AUDIOCODEC + 16] = &decodeFlac;
 	initSwi();
