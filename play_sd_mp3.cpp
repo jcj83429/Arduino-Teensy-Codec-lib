@@ -108,8 +108,7 @@ int AudioPlaySdMp3::play(void)
 	int skip = skipID3(sd_buf);
 	if (skip) {
 		size_id3 = skip;
-		int b = skip & 0xfffffe00;
-		fseek(b);
+		fseek(skip);
 		sd_left = 0;
 //		Serial.print("skip");
 //		Serial.print(fposition());
