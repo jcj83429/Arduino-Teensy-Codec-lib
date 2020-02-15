@@ -124,6 +124,17 @@ bool AudioPlaySdAac::setupMp4(void)
 
 	//go through the boxes to find the interesting atoms:
 	uint32_t moov = findMp4Atom("moov", 0).position;
+
+	//read mvhd and return false if there is more than 1 track (video file)
+	uint32_t mvhd = findMp4Atom("mvhd", moov + 8).position;
+	uint8_t mvhdVersion;
+	fseek(mvhd);
+	fread(&mvhdVersion, 1);
+	uint32_t next_track_id = fread32(mvhd + (mvhdVersion == 0 ? 104 : 116));
+	if (next_track_id > 2) {
+		return false;
+	}
+
 	uint32_t trak = findMp4Atom("trak", moov + 8).position;
 	uint32_t mdia = findMp4Atom("mdia", trak + 8).position;
 
