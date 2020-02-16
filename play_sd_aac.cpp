@@ -201,7 +201,8 @@ bool AudioPlaySdAac::setupMp4(void)
 		_ATOM mdat =  findMp4Atom("mdat", 0);
 		lastChunk = mdat.size;
 	}
-	
+
+#if 0
 	for(uint32_t i=0; i<nChunks; i++) {
 		uint32_t chunk_offset = fread32(stcoPosition + 16 + i * 4);
 		Serial.print("chunk ");
@@ -210,7 +211,6 @@ bool AudioPlaySdAac::setupMp4(void)
 		Serial.println(chunk_offset);
 	}
 
-#if 0
 	Serial.print("mdhd duration=");
 	Serial.print(duration);
 	Serial.print(" ms, stsd: chan=");
