@@ -108,6 +108,7 @@ public:
 	virtual uint32_t lengthMillis(void) {return max(fsize() / (bitrate / 8 ) * 1000,  positionMillis());} //Ignores VBR
 	int channels(void) {return _channels;}
 	int bitRate(void) {return bitrate;}
+	uint32_t sampleRate(void) {return samplerate;}
 	void processorUsageMaxResetDecoder(void){__disable_irq();decode_cycles_max = decode_cycles_max_read = 0;__enable_irq();}
 	int freeRam(void);
 
@@ -131,10 +132,11 @@ protected:
 
 	unsigned short	_channels;
 	unsigned short	bitrate;
+	uint32_t        samplerate;
 
 	volatile codec_playstate playing;
 
-	void initVars(void) {samples_played=_channels=bitrate=decode_cycles=decode_cycles_read=decode_cycles_max=decode_cycles_max_read = 0;playing=codec_stopped;}
+	void initVars(void) {samples_played=_channels=bitrate=samplerate=decode_cycles=decode_cycles_read=decode_cycles_max=decode_cycles_max_read = 0;playing=codec_stopped;}
 	void initSwi(void) {PATCH_PRIO;NVIC_SET_PRIORITY(IRQ_AUDIOCODEC, IRQ_AUDIOCODEC_PRIO);NVIC_ENABLE_IRQ(IRQ_AUDIOCODEC);}
 
 	// These are just convenience functions that redirect to the corresponding functions on currentFile

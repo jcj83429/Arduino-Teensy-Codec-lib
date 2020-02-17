@@ -74,17 +74,11 @@ void AudioPlaySdFlac::stop(void)
 uint32_t AudioPlaySdFlac::lengthMillis(void)
 {
 	if (hFLACDecoder != NULL)
-		return FLAC__stream_decoder_get_total_samples(hFLACDecoder) * 1000 / AUDIOCODECS_SAMPLE_RATE;
+		return FLAC__stream_decoder_get_total_samples(hFLACDecoder) * 1000 / samplerate;
 	else
 		return 0;
 }
 
-unsigned AudioPlaySdFlac::sampleRate(void){
-	if (hFLACDecoder != NULL)
-		return  FLAC__stream_decoder_get_total_samples(hFLACDecoder);
-	else
-		return 0;
-}
 /*
 int AudioPlaySdFlac::play(const char *filename){
 	stop();
@@ -147,6 +141,8 @@ int AudioPlaySdFlac::play(void)
 		goto PlayErr;
 	}
 
+	samplerate = FLAC__stream_decoder_get_sample_rate(hFLACDecoder);
+
 #ifdef FLAC_USE_SWI
 	_VectorsRam[IRQ_AUDIOCODEC + 16] = &decodeFlac;
 	initSwi();
@@ -164,7 +160,7 @@ PlayErr:
 bool AudioPlaySdFlac::seek(uint32_t timesec)
 {
 	pause(true);
-	uint64_t sample = timesec * AUDIOCODECS_SAMPLE_RATE; // hardcode 44100 for now
+	uint64_t sample = timesec * samplerate;
 	sample &= ~(AUDIO_BLOCK_SAMPLES-1); // the write callback can't handle frame sizes that are not multiples of AUDIO_BLOCK_SAMPLES
 	bool seekResult = FLAC__stream_decoder_seek_absolute(hFLACDecoder, sample);
 	if (seekResult) {
@@ -331,8 +327,7 @@ FLAC__StreamDecoderWriteStatus write_callback(const FLAC__StreamDecoder *decoder
 		obj->samples_played = frame->header.number.sample_number;
 	}
 
-	if ( frame->header.sample_rate != AUDIOCODECS_SAMPLE_RATE ||
-		chan==0 || chan> 2 ||
+	if (chan==0 || chan> 2 ||
 		blocksize < AUDIO_BLOCK_SAMPLES ||
 		obj->audiobuffer->available() < numbuffers
 		)

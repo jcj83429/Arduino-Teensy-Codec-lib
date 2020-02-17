@@ -304,7 +304,9 @@ int AudioPlaySdAac::play(void){
 
 	for (int i=0; i< DECODE_NUM_STATES; i++) decodeAac();
 
-	if((aacFrameInfo.sampRateOut != AUDIOCODECS_SAMPLE_RATE ) || (aacFrameInfo.nChans > 2)) {
+	samplerate = aacFrameInfo.sampRateOut;
+
+	if(aacFrameInfo.nChans > 2) {
 		//Serial.println("incompatible AAC file.");
 		lastError = ERR_CODEC_FORMAT;
 		stop();

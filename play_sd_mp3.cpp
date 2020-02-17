@@ -150,7 +150,8 @@ int AudioPlaySdMp3::play(void)
 
 	for (size_t i=0; i< DECODE_NUM_STATES; i++) decodeMp3();
 
-	if((mp3FrameInfo.samprate != AUDIOCODECS_SAMPLE_RATE ) || (mp3FrameInfo.bitsPerSample != 16) || (mp3FrameInfo.nChans > 2)) {
+	samplerate = mp3FrameInfo.samprate;
+	if((mp3FrameInfo.bitsPerSample != 16) || (mp3FrameInfo.nChans > 2)) {
 		//Serial.println("incompatible MP3 file.");
 		lastError = ERR_CODEC_FORMAT;
 		stop();
@@ -315,8 +316,7 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 	}
 	
 	// we don't know where we are after all the retries, so calculate time from file offset
-	// hardcode 44100 for now
-	samples_played = (uint64_t)offsetToTimeMs(fposition() - MP3_SD_BUF_SIZE, tocValid ? toc : NULL) * AUDIOCODECS_SAMPLE_RATE / 1000;
+	samples_played = (uint64_t)offsetToTimeMs(fposition() - MP3_SD_BUF_SIZE, tocValid ? toc : NULL) * samplerate / 1000;
 	
 	if (isPlaying()) {
 		pause(false);
@@ -332,7 +332,7 @@ uint32_t AudioPlaySdMp3::lengthMillis()
 {
 	if (vbr_total_frames) {
 		// for VBR
-		return (uint64_t)vbr_total_frames * mp3FrameInfo.outputSamps / mp3FrameInfo.nChans * 1000 / mp3FrameInfo.samprate;
+		return (uint64_t)vbr_total_frames * mp3FrameInfo.outputSamps / mp3FrameInfo.nChans * 1000 / samplerate;
 	} else {
 		// for CBR
 		uint64_t sizeWithoutID3 = fsize() - size_id3;

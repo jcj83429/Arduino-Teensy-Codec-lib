@@ -61,7 +61,6 @@ public:
 	void resumeDecoding(void);
 
 	uint32_t lengthMillis(void);
-	unsigned sampleRate(void);
 
 protected:
 
