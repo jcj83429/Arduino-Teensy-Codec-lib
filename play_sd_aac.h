@@ -76,7 +76,7 @@ protected:
 	uintptr_t		play_pos;
 	size_t 			size_id3;
 	uint32_t 		firstChunk, lastChunk;	//for MP4/M4A //TODO: use for ID3 too
-	uint32_t		stscPosition, stcoPosition, sttsPosition; // position of atoms used for seeking
+	uint32_t		stscPosition, stcoPosition, sttsPosition, stszPosition; // position of atoms used for seeking
 	unsigned		duration;
 
 	HAACDecoder		hAACDecoder;

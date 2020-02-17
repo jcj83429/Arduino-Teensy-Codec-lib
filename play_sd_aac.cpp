@@ -189,6 +189,8 @@ bool AudioPlaySdAac::setupMp4(void)
 
 	//stco - chunk offset atom:
 	stcoPosition = findMp4Atom("stco", stbl + 8).position;
+	//stsz - sample (aac block) size atom
+	stszPosition = findMp4Atom("stsz", stbl + 8).position;
 
 	//number of chunks:
 	uint32_t nChunks = fread32(stcoPosition + 8 + 0x04);
@@ -347,6 +349,7 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 	
 	if (aacBlockNum >= sample_count) {
 		Serial.println("seek fail: trying to seek past end of file");
+		return false;
 	}
 	
 	Serial.print("going to block ");
@@ -385,15 +388,35 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 	Serial.print("cumulativeBlocks ");Serial.println(cumulativeBlocks);
 	// chunks in mp4 are 1-indexed.
 	uint32_t theChunk = (aacBlockNum - cumulativeBlocks) / last_samples_per_chunk + last_first_chunk;
-	// samples_played = block size * rounded block num
-	samples_played = sample_delta * (aacBlockNum - ((aacBlockNum - cumulativeBlocks) % last_samples_per_chunk));
+	uint32_t chunkFirstBlock = aacBlockNum - (aacBlockNum - cumulativeBlocks) % last_samples_per_chunk;
+	uint32_t chunk_offset = fread32(stcoPosition + 16 + (theChunk-1) * 4);
+
+	uint32_t block_offset = chunk_offset;
+	uint32_t sample_size = fread32(stszPosition + 12);
+	if (sample_size) {
+		block_offset += sample_size * (aacBlockNum - chunkFirstBlock);
+	} else  {
+		uint32_t stsz_sample_count = fread32(stszPosition + 16);
+		if (stsz_sample_count < aacBlockNum) {
+			Serial.print("seek fail: stsz sample_count is ");
+			Serial.print(stsz_sample_count);
+			Serial.print(", need ");
+			Serial.println(aacBlockNum);
+			return false;
+		}
+		for (uint32_t i = chunkFirstBlock; i < aacBlockNum; i++) {
+			uint32_t blockSize = fread32(stszPosition + 20 + i * 4);
+			block_offset += blockSize;
+		}
+	}
+	samples_played = sample_delta * aacBlockNum;
 	
 	Serial.print("go to chunk ");Serial.println(theChunk);
-
-	uint32_t chunk_offset = fread32(stcoPosition + 16 + (theChunk-1) * 4);
 	Serial.print("chunk_offset ");Serial.println(chunk_offset);
+	Serial.print("skip ");Serial.print(aacBlockNum - chunkFirstBlock); Serial.println(" blocks");
+	Serial.print("block_offset ");Serial.println(block_offset);
 	
-	if (!fseek(chunk_offset)) {
+	if (!fseek(block_offset)) {
 		Serial.println("seek fail: fseek failed");
 		return false;
 	}
