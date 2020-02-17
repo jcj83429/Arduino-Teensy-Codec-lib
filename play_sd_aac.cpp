@@ -104,6 +104,17 @@ _ATOM AudioPlaySdAac::findMp4Atom(const char *atom, const uint32_t posi, const b
 		r = fseek(ret.position);
 		fread((uint8_t *) &atomInfo, sizeof(atomInfo));
 		ret.size = REV32(atomInfo.size);
+		if (ret.size == 1) {
+			uint32_t tmp;
+			// read top 32 bits
+			fread((uint8_t *)&tmp, sizeof(tmp));
+			if(tmp != 0){
+				// sizes > 4GB not supported
+				break;
+			}
+			fread((uint8_t *)&tmp, sizeof(tmp));
+			ret.size = REV32(tmp);
+		}
 		//ret.size = atomInfo.size;
 		if (strncmp(atom, atomInfo.name, 4)==0){
 			return ret;
@@ -123,19 +134,28 @@ bool AudioPlaySdAac::setupMp4(void)
 		return false; //no mp4/m4a file
 
 	//go through the boxes to find the interesting atoms:
-	uint32_t moov = findMp4Atom("moov", 0).position;
+	_ATOM moov = findMp4Atom("moov", 0);
+	if (!moov.size) {
+		Serial.println("no moov");
+		return false;
+	}
 
 	//read mvhd and return false if there is more than 1 track (video file)
-	uint32_t mvhd = findMp4Atom("mvhd", moov + 8).position;
+	_ATOM mvhd = findMp4Atom("mvhd", moov.position + 8);
+	if (!mvhd.size) {
+		Serial.println("no mvhd");
+		return false;
+	}
+
 	uint8_t mvhdVersion;
-	fseek(mvhd);
+	fseek(mvhd.position);
 	fread(&mvhdVersion, 1);
-	uint32_t next_track_id = fread32(mvhd + (mvhdVersion == 0 ? 104 : 116));
+	uint32_t next_track_id = fread32(mvhd.position + (mvhdVersion == 0 ? 104 : 116));
 	if (next_track_id > 2) {
 		return false;
 	}
 
-	uint32_t trak = findMp4Atom("trak", moov + 8).position;
+	uint32_t trak = findMp4Atom("trak", moov.position + 8).position;
 	uint32_t mdia = findMp4Atom("mdia", trak + 8).position;
 
 	//determine duration:
