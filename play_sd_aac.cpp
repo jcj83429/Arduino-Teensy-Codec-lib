@@ -151,10 +151,21 @@ bool AudioPlaySdAac::setupMp4(void)
 	if (!stsd.size)
 		return false; //something is not ok
 
-	uint16_t channels = fread16(stsd.position + 8 + 0x20);
+	_ATOM mp4a = findMp4Atom("mp4a", stsd.position + 16);
+	if (!mp4a.size) {
+		// not audio file?
+		Serial.println("no mp4a");
+		return false;
+	}
+
+	uint16_t channels = fread16(mp4a.position + 0x18);
 	//uint16_t channels = 1;
 	//uint16_t bits		= fread16(stsd.position + 8 + 0x22); //not used
-	samplerate = fread32(stsd.position + 8 + 0x26);
+	samplerate = fread32(mp4a.position + 0x1e);
+	if (!samplerate) {
+		Serial.println("no samplerate");
+		return false;
+	}
 
 	setupDecoder(channels, samplerate, AAC_PROFILE_LC);
 
@@ -305,6 +316,11 @@ int AudioPlaySdAac::play(void){
 	decoding_block = 0;
 
 	for (int i=0; i< DECODE_NUM_STATES; i++) decodeAac();
+
+	if(lastError){
+		stop();
+		return lastError;
+	}
 
 	samplerate = aacFrameInfo.sampRateOut;
 
