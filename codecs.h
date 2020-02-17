@@ -104,7 +104,7 @@ public:
 	virtual int play() = 0;
 	virtual bool seek(uint32_t timesec) = 0;
 	bool isPlaying(void) {return playing > 0;}
-	unsigned positionMillis(void) { return ((uint64_t)samples_played) * 1000 / AUDIOCODECS_SAMPLE_RATE;}
+	unsigned positionMillis(void) { return ((uint64_t)samples_played) * 1000 / (samplerate ? samplerate : AUDIOCODECS_SAMPLE_RATE);}
 	virtual uint32_t lengthMillis(void) {return max(fsize() / (bitrate / 8 ) * 1000,  positionMillis());} //Ignores VBR
 	int channels(void) {return _channels;}
 	int bitRate(void) {return bitrate;}

@@ -78,6 +78,7 @@ protected:
 	void update(void);
 	uint32_t timeMsToOffset(uint32_t timeMs, uint8_t *toc);
 	uint32_t offsetToTimeMs(uint32_t offset, uint8_t *toc);
+	uint32_t requiredBufSamples(void);
 	friend void decodeMp3(void);
 };
 

@@ -148,10 +148,11 @@ int AudioPlaySdMp3::play(void)
 
 	sd_p = sd_buf;
 
-	for (size_t i=0; i< DECODE_NUM_STATES; i++) decodeMp3();
+	for (size_t i=0; i< DECODE_NUM_STATES * 2; i++) decodeMp3();
 
 	samplerate = mp3FrameInfo.samprate;
-	if((mp3FrameInfo.bitsPerSample != 16) || (mp3FrameInfo.nChans > 2)) {
+	// only MPEG-1 layer 3 (16k-24k) and MPEG-2 layer 3 (32k-48k) are supported
+	if((samplerate < 16000) || (mp3FrameInfo.bitsPerSample != 16) || (_channels > 2)) {
 		//Serial.println("incompatible MP3 file.");
 		lastError = ERR_CODEC_FORMAT;
 		stop();
@@ -217,6 +218,17 @@ uint32_t AudioPlaySdMp3::offsetToTimeMs(uint32_t offset, uint8_t *toc)
 	}
 }
 
+// MPEG-2 layer 3 (16k-24k sample rates) has only 576 samples per frame as opposed to 1152.
+// 576 = 128 * 4.5, so for these files we need to decode 2 frames to get a multiple of 128.
+uint32_t AudioPlaySdMp3::requiredBufSamples(void)
+{
+	if (_channels == 0) {
+		return MP3_BUF_SIZE;
+	} else {
+		return MAX_NGRAN * MAX_NSAMP * _channels;
+	}
+}
+
 bool AudioPlaySdMp3::seek(uint32_t timesec)
 {
 	if (!isPlaying()) {
@@ -255,6 +267,8 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 		stop();
 		return true;
 	}
+
+	decoded_length[0] = decoded_length[1] = 0;
 	int validFrameFound = 0;
 	// Sometimes after one successful decode after seek, the next decode can still fail.
 	// I don't know if it's possible for a decode to fail after 2 successful decodes, but I will require 3 consecutive successful decodes to be safe.
@@ -274,7 +288,7 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 			sd_left -= offset;
 			
 			// The only way to fully know if we found a valid frame is by trying to decode it
-			int decode_res = MP3Decode(hMP3Decoder, &sd_p, (int*)&sd_left, buf[decoding_block], 0);
+			int decode_res = MP3Decode(hMP3Decoder, &sd_p, (int*)&sd_left, buf[decoding_block] + decoded_length[decoding_block], 0);
 			if (decode_res) {
 				Serial.print("decode error ");
 				Serial.println(decode_res);
@@ -284,11 +298,15 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 					sd_left -= 2;
 				}
 				validFrameFound = 0;
+				decoded_length[0] = decoded_length[1] = 0;
 			} else {
 				// don't throw away the decoding result
 				MP3GetLastFrameInfo(hMP3Decoder, &mp3FrameInfo);
-				decoded_length[decoding_block] = mp3FrameInfo.outputSamps;
-				decoding_block = 1 - decoding_block;
+				decoded_length[decoding_block] += mp3FrameInfo.outputSamps;
+				if(decoded_length[decoding_block] >= requiredBufSamples()) {
+					decoding_block = 1 - decoding_block;
+					decoded_length[decoding_block] = 0;
+				}
 				validFrameFound++;
 			}
 		}
@@ -303,9 +321,8 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 	}
 
 	decoding_state = 1; // we refilled the buffer
-	
-	decoded_length[decoding_block] = 0;
-	for (int i=0; i< DECODE_NUM_STATES; i++) {
+
+	for (int i=0; i< DECODE_NUM_STATES * 2; i++) {
 		if (isPlaying()) {
 			decodeMp3();
 			if (lastError) {
@@ -314,6 +331,7 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 			}
 		}
 	}
+	play_pos = 0;
 	
 	// we don't know where we are after all the retries, so calculate time from file offset
 	samples_played = (uint64_t)offsetToTimeMs(fposition() - MP3_SD_BUF_SIZE, tocValid ? toc : NULL) * samplerate / 1000;
@@ -332,7 +350,7 @@ uint32_t AudioPlaySdMp3::lengthMillis()
 {
 	if (vbr_total_frames) {
 		// for VBR
-		return (uint64_t)vbr_total_frames * mp3FrameInfo.outputSamps / mp3FrameInfo.nChans * 1000 / samplerate;
+		return (uint64_t)vbr_total_frames * mp3FrameInfo.outputSamps / _channels * 1000 / samplerate;
 	} else {
 		// for CBR
 		uint64_t sizeWithoutID3 = fsize() - size_id3;
@@ -356,7 +374,7 @@ void AudioPlaySdMp3::update(void)
 	//In addition, check before if there waits work for it.
 	int db = decoding_block;
 	if (!NVIC_IS_ACTIVE(IRQ_AUDIOCODEC))
-		if (decoded_length[db]==0)
+		if (decoded_length[db] < requiredBufSamples())
 			NVIC_TRIGGER_INTERRUPT(IRQ_AUDIOCODEC);
 
 	//determine the block we're playing from
@@ -369,7 +387,7 @@ void AudioPlaySdMp3::update(void)
 
 	uintptr_t pl = play_pos;
 
-	if (mp3FrameInfo.nChans == 2) {
+	if (_channels == 2) {
 		// if we're playing stereo, allocate another
 		// block for the right channel output
 		block_right = allocate();
@@ -404,7 +422,7 @@ void AudioPlaySdMp3::update(void)
 	release(block_left);
 
 	//Switch to the next block if we have no data to play anymore:
-	if (decoded_length[playing_block] == 0)
+	if (decoded_length[playing_block] == 0 && decoded_length[decoding_block] == requiredBufSamples())
 	{
 		decoding_block = playing_block;
 		play_pos = 0;
@@ -420,7 +438,7 @@ void decodeMp3(void)
 	AudioPlaySdMp3 *o = mp3objptr;
 	int db = o->decoding_block;
 
-	if ( o->decoded_length[db] > 0 ) return; //this block is playing, do NOT fill it
+	if ( o->decoded_length[db] >= o->requiredBufSamples() ) return; //this block is already filled, do NOT fill it
 
 	uint32_t cycles = ARM_DWT_CYCCNT;
 	int eof = false;
@@ -453,7 +471,7 @@ void decodeMp3(void)
 			o->sd_p += offset;
 			o->sd_left -= offset;
 
-			int decode_res = MP3Decode(o->hMP3Decoder, &o->sd_p, (int*)&o->sd_left,o->buf[db], 0);
+			int decode_res = MP3Decode(o->hMP3Decoder, &o->sd_p, (int*)&o->sd_left,o->buf[db] + o->decoded_length[db], 0);
 
 			AudioPlaySdMp3::lastError = decode_res;
 			switch(decode_res)
@@ -461,7 +479,8 @@ void decodeMp3(void)
 				case ERR_MP3_NONE:
 				{
 					MP3GetLastFrameInfo(o->hMP3Decoder, &o->mp3FrameInfo);
-					o->decoded_length[db] = o->mp3FrameInfo.outputSamps;
+					o->_channels = o->mp3FrameInfo.nChans;
+					o->decoded_length[db] += o->mp3FrameInfo.outputSamps;
 					break;
 				}
 
