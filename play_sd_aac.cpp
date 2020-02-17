@@ -332,9 +332,14 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 
 	// parse stts for "sample" (actually AAC block) size for seeking
 	uint32_t sttsEntries = fread32(sttsPosition + 12);
-	if (sttsEntries != 1) {
-		Serial.println("seek fail: stts has no entries or too many entries");
+	if (sttsEntries < 1) {
+		Serial.print("seek fail: stts has no entries");
 		return false;
+	} else if (sttsEntries > 1) {
+		// files produced by ffmpeg have an extra stts entry for the last frame with less than 1024 samples
+		Serial.print("seek: stts has too many entries (");
+		Serial.print(sttsEntries);
+		Serial.println("). ignoring extra entries");
 	}
 	uint32_t sample_count = fread32(sttsPosition + 16);
 	uint32_t sample_delta = fread32(sttsPosition + 16 + 4);
@@ -378,14 +383,14 @@ bool AudioPlaySdAac::seek(uint32_t timesec) {
 		last_samples_per_chunk = samples_per_chunk;
 	}
 	Serial.print("cumulativeBlocks ");Serial.println(cumulativeBlocks);
-	// chunks in mp4 are 1-indexed. That's just wrong. We subtract 1 to make it 0-indexed.
-	uint32_t theChunk = (aacBlockNum - cumulativeBlocks) / last_samples_per_chunk + last_first_chunk - 1;
+	// chunks in mp4 are 1-indexed.
+	uint32_t theChunk = (aacBlockNum - cumulativeBlocks) / last_samples_per_chunk + last_first_chunk;
 	// samples_played = block size * rounded block num
 	samples_played = sample_delta * (aacBlockNum - ((aacBlockNum - cumulativeBlocks) % last_samples_per_chunk));
 	
 	Serial.print("go to chunk ");Serial.println(theChunk);
 
-	uint32_t chunk_offset = fread32(stcoPosition + 16 + theChunk * 4);
+	uint32_t chunk_offset = fread32(stcoPosition + 16 + (theChunk-1) * 4);
 	Serial.print("chunk_offset ");Serial.println(chunk_offset);
 	
 	if (!fseek(chunk_offset)) {
