@@ -127,24 +127,24 @@ _ATOM AudioPlaySdAac::findMp4Atom(const char *atom, const uint32_t posi, const b
 
 }
 
-bool AudioPlaySdAac::setupMp4(void)
+int AudioPlaySdAac::setupMp4(void)
 {
 	_ATOM ftyp = findMp4Atom("ftyp",0, false);
 	if (!ftyp.size)
-		return false; //no mp4/m4a file
+		return -1; //no mp4/m4a file
 
 	//go through the boxes to find the interesting atoms:
 	_ATOM moov = findMp4Atom("moov", 0);
 	if (!moov.size) {
 		Serial.println("no moov");
-		return false;
+		return 1;
 	}
 
 	//read mvhd and return false if there is more than 1 track (video file)
 	_ATOM mvhd = findMp4Atom("mvhd", moov.position + 8);
 	if (!mvhd.size) {
 		Serial.println("no mvhd");
-		return false;
+		return 1;
 	}
 
 	uint8_t mvhdVersion;
@@ -152,7 +152,7 @@ bool AudioPlaySdAac::setupMp4(void)
 	fread(&mvhdVersion, 1);
 	uint32_t next_track_id = fread32(mvhd.position + (mvhdVersion == 0 ? 104 : 116));
 	if (next_track_id > 2) {
-		return false;
+		return 1;
 	}
 
 	uint32_t trak = findMp4Atom("trak", moov.position + 8).position;
@@ -169,13 +169,13 @@ bool AudioPlaySdAac::setupMp4(void)
 	//stsd sample description box: - infos to parametrize the decoder
 	_ATOM stsd = findMp4Atom("stsd", stbl + 8);
 	if (!stsd.size)
-		return false; //something is not ok
+		return 1; //something is not ok
 
 	_ATOM mp4a = findMp4Atom("mp4a", stsd.position + 16);
 	if (!mp4a.size) {
 		// not audio file?
 		Serial.println("no mp4a");
-		return false;
+		return 1;
 	}
 
 	uint16_t channels = fread16(mp4a.position + 0x18);
@@ -184,7 +184,7 @@ bool AudioPlaySdAac::setupMp4(void)
 	samplerate = fread32(mp4a.position + 0x1e);
 	if (!samplerate) {
 		Serial.println("no samplerate");
-		return false;
+		return 1;
 	}
 
 	setupDecoder(channels, samplerate, AAC_PROFILE_LC);
@@ -258,7 +258,7 @@ bool AudioPlaySdAac::setupMp4(void)
 	Serial.println(lastChunk, HEX);
 #endif
 
-	return true;
+	return 0;
 }
 
 void AudioPlaySdAac::setupDecoder(int channels, int samplerate, int profile)
@@ -297,13 +297,14 @@ int AudioPlaySdAac::play(void){
 
 	sd_p = sd_buf;
 
-	if (setupMp4()) {
+	int mp4Error = setupMp4();
+	if (mp4Error == 0) {
 		fseek(firstChunk);
 		sd_left = 0;
 		isRAW = false;
 		//Serial.print("mp4");
 	}
-	else { //NO MP4. Do we have an ID3TAG ?
+	else if (mp4Error < 0) { //NO MP4. Do we have an ID3TAG ?
 
 		fseek(0);
 		//Read-ahead 10 Bytes to detect ID3
@@ -316,6 +317,10 @@ int AudioPlaySdAac::play(void){
 			sd_left = 0;
 			//Serial.print("ID3");
 		} else size_id3 = 0;
+	}
+	else { //corrupted MP4
+		stop();
+		return ERR_CODEC_FORMAT;
 	}
 
 	//Fill buffer from the beginning with fresh data
