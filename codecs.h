@@ -109,6 +109,8 @@ public:
 	int channels(void) {return _channels;}
 	int bitRate(void) {return bitrate;}
 	uint32_t sampleRate(void) {return samplerate;}
+	float replaygainPeak(bool isAlbum) { return isAlbum ? replaygain_album_peak : replaygain_track_peak; }
+	float replaygainGainDb(bool isAlbum) { return isAlbum ? replaygain_album_gain_db : replaygain_track_gain_db; }
 	void processorUsageMaxResetDecoder(void){__disable_irq();decode_cycles_max = decode_cycles_max_read = 0;__enable_irq();}
 	int freeRam(void);
 
@@ -135,8 +137,15 @@ protected:
 	uint32_t        samplerate;
 
 	volatile codec_playstate playing;
+	
+	float replaygain_track_peak, replaygain_track_gain_db, replaygain_album_peak, replaygain_album_gain_db;
 
-	void initVars(void) {samples_played=_channels=bitrate=samplerate=decode_cycles=decode_cycles_read=decode_cycles_max=decode_cycles_max_read = 0;playing=codec_stopped;}
+	void initVars(void) {
+		samples_played=_channels=bitrate=samplerate=decode_cycles=decode_cycles_read=decode_cycles_max=decode_cycles_max_read = 0;
+		playing=codec_stopped; 
+		replaygain_track_peak = replaygain_album_peak = 1;
+		replaygain_track_gain_db = replaygain_album_gain_db = NAN; // invalid
+	}
 	void initSwi(void) {PATCH_PRIO;NVIC_SET_PRIORITY(IRQ_AUDIOCODEC, IRQ_AUDIOCODEC_PRIO);NVIC_ENABLE_IRQ(IRQ_AUDIOCODEC);}
 
 	// These are just convenience functions that redirect to the corresponding functions on currentFile

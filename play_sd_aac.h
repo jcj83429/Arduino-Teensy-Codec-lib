@@ -86,6 +86,7 @@ protected:
 	uint32_t fread32(size_t position);
 	void setupDecoder(int channels, int samplerate, int profile);
 	_ATOM findMp4Atom(const char *atom, const uint32_t posi, const bool loop);
+	void parseMp4Tags(uint32_t moovPosition);
 	// returns -1 if mp4 not found, 0 if mp4 ok, 1 if mp4 is corrupt or unsupported
 	int setupMp4(void);
 	void update(void);
