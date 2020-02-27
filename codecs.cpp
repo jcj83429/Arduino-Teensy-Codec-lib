@@ -140,4 +140,89 @@ int AudioCodec::freeRam(void) {
   return free_memory;
 }
 
+uint32_t parseID3size(uint8_t *buf){
+	uint32_t size = 0;
+	for(int i = 0; i < 4; i++){
+		size <<= 7;
+		size |= *buf & 0x7f;
+		buf++;
+	}
+	return size;
+}
 
+uint32_t AudioCodec::parseID3(void)
+{
+	uint8_t buf[50] = {0};
+	// read header
+	fseek(0);
+	fread(buf, 14);
+	if(strncmp("ID3", (char*)buf, 3)){
+		return 0;
+	}
+	// flags
+	if(buf[5] & 0xa0){
+		// unsynchronization or experimental
+		return 0;
+	}
+	
+	uint32_t id3size = parseID3size(&buf[6]) + 10;
+	uint32_t frameEnd = id3size;
+	if(buf[5] & 0x10){
+		// footer present
+		id3size += 10;
+	}
+	uint32_t framePos = 10;
+	if(buf[5] & 0x40){
+		// skip extended header
+		Serial.println("skipping extended header");
+		framePos += parseID3size(&buf[10]);
+	}
+	
+	while(framePos < frameEnd){
+		fseek(framePos);
+		fread(buf, 10);
+		uint32_t frameSize = parseID3size(&buf[4]);
+		framePos += frameSize + 10;
+		if(frameSize > 49){
+			// too big
+			continue;
+		}
+		if(strncmp("TXXX", (char*)buf, 4) == 0){
+			fread(buf, frameSize);
+			if(buf[0] != 0){
+				continue;
+			}
+			if(strncasecmp("REPLAYGAIN_", (char*)buf + 1, 11) == 0){
+				bool isPeak, isAlbum;
+				if(strncasecmp("REPLAYGAIN_TRACK_GAIN", (char*)buf + 1, 21) == 0){
+					isPeak = false; isAlbum = false;
+				}else if(strncasecmp("REPLAYGAIN_ALBUM_GAIN", (char*)buf + 1, 21) == 0){
+					isPeak = false; isAlbum = false;
+				}else if(strncasecmp("REPLAYGAIN_TRACK_PEAK", (char*)buf + 1, 21) == 0){
+					isPeak = true; isAlbum = false;
+				}else if(strncasecmp("REPLAYGAIN_ALBUM_PEAK", (char*)buf + 1, 21) == 0){
+					isPeak = true; isAlbum = true;
+				}else{
+					continue;
+				}
+				float value = atof((char*)buf + 23);
+				if(isPeak){
+					value = min(1, max(0, value));
+					if(isAlbum){
+						replaygain_album_peak = value;
+					}else{
+						replaygain_track_peak = value;
+					}
+				}else{
+					if(isAlbum){
+						replaygain_album_gain_db = value;
+					}else{
+						replaygain_track_gain_db = value;
+					}
+				}
+			}
+		}
+	}
+	
+	return id3size;
+}

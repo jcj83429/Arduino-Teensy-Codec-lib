@@ -147,6 +147,8 @@ protected:
 		replaygain_track_gain_db = replaygain_album_gain_db = NAN; // invalid
 	}
 	void initSwi(void) {PATCH_PRIO;NVIC_SET_PRIORITY(IRQ_AUDIOCODEC, IRQ_AUDIOCODEC_PRIO);NVIC_ENABLE_IRQ(IRQ_AUDIOCODEC);}
+	
+	uint32_t parseID3(void);
 
 	// These are just convenience functions that redirect to the corresponding functions on currentFile
 	bool   f_eof(void) {return currentFile->f_eof();}

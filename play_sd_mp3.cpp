@@ -101,21 +101,12 @@ int AudioPlaySdMp3::play(void)
 		return lastError;
 	}
 
-	//Read-ahead 10 Bytes to detect ID3
-	sd_left =  fread(sd_buf, 10);
-
-	//Skip ID3, if existent
-	int skip = skipID3(sd_buf);
-	if (skip) {
-		size_id3 = skip;
-		fseek(skip);
-		sd_left = 0;
-//		Serial.print("skip");
-//		Serial.print(fposition());
-	} else size_id3 = 0;
-
+	// parse and skip ID3
+	size_id3 = parseID3();
+	fseek(size_id3);
+	
 	//Fill buffer from the beginning with fresh data
-	sd_left = fillReadBuffer(sd_buf, sd_buf, sd_left, MP3_SD_BUF_SIZE);
+	sd_left = fillReadBuffer(sd_buf, sd_buf, 0, MP3_SD_BUF_SIZE);
 
 	if (!sd_left) {
 		lastError = ERR_CODEC_FILE_NOT_FOUND;
