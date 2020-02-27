@@ -75,6 +75,7 @@
 
 extern "C" { void memcpy_frominterleaved(int16_t *dst1, int16_t *dst2, int16_t *src); }
 size_t skipID3(uint8_t *sd_buf);
+bool isReplayGainKey(const char *key);
 
 enum codec_filetype {codec_none, codec_file, codec_flash, codec_serflash};
 enum codec_playstate {codec_stopped, codec_playing, codec_paused};
@@ -149,6 +150,7 @@ protected:
 	void initSwi(void) {PATCH_PRIO;NVIC_SET_PRIORITY(IRQ_AUDIOCODEC, IRQ_AUDIOCODEC_PRIO);NVIC_ENABLE_IRQ(IRQ_AUDIOCODEC);}
 	
 	uint32_t parseID3(void);
+	void setReplayGainValue(const char *key, float value);
 
 	// These are just convenience functions that redirect to the corresponding functions on currentFile
 	bool   f_eof(void) {return currentFile->f_eof();}

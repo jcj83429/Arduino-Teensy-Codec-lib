@@ -161,54 +161,28 @@ void AudioPlaySdAac::parseMp4Tags(uint32_t moovPosition)
 			if(!name.size){
 				goto nexttag;
 			}
-			char strbuf[25];
+			char key[25];
 			if(!fseek(name.position + 12)){
 				return;
 			}
-			fread((uint8_t*)&strbuf, 24);
-			strbuf[24] = 0;
-			bool isPeak, isAlbum;
-			if(strcasecmp("REPLAYGAIN_TRACK_GAIN", strbuf) == 0){
-				isPeak = false; isAlbum = false;
-			}else if(strcasecmp("REPLAYGAIN_ALBUM_GAIN", strbuf) == 0){
-				isPeak = false; isAlbum = false;
-			}else if(strcasecmp("REPLAYGAIN_TRACK_PEAK", strbuf) == 0){
-				isPeak = true; isAlbum = false;
-			}else if(strcasecmp("REPLAYGAIN_ALBUM_PEAK", strbuf) == 0){
-				isPeak = true; isAlbum = true;
-			}else{
+			fread((uint8_t*)&key, 24);
+			key[24] = 0;
+			if(!isReplayGainKey(key)){
 				goto nexttag;
 			}
 			
 			_ATOM data = findMp4Atom("data", nextTagPos + 8);
-			float value;
-			if(data.size && data.size < 40 && data.position < ilstEnd){
-				if(!fseek(data.position + 16)){
-					return;
-				}
-				fread((uint8_t*)&strbuf, data.size - 16);
-				strbuf[data.size - 16] = 0;
-				value = atof(strbuf);
-			}else{
-				Serial.print(strbuf);
-				Serial.println(" data too big");
+			if(!data.size || data.size >= 40 || data.position >= ilstEnd){
 				goto nexttag;
 			}
-			
-			if(isPeak){
-				value = min(1, max(0, value));
-				if(isAlbum){
-					replaygain_album_peak = value;
-				}else{
-					replaygain_track_peak = value;
-				}
-			}else{
-				if(isAlbum){
-					replaygain_album_gain_db = value;
-				}else{
-					replaygain_track_gain_db = value;
-				}
+			if(!fseek(data.position + 16)){
+				return;
 			}
+			char valueStr[data.size - 16 + 1];
+			fread((uint8_t*)valueStr, data.size - 16);
+			valueStr[data.size - 16] = 0;
+			float value = atof(valueStr);
+			setReplayGainValue(key, value);
 		}
 nexttag:
 		nextTagPos += atomInfo.size;

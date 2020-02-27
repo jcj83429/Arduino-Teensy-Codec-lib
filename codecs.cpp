@@ -61,6 +61,16 @@ size_t skipID3(uint8_t *sd_buf)
 	else return 0;
 }
 
+bool isReplayGainKey(const char *key){
+	if(strncasecmp("REPLAYGAIN_TRACK_GAIN", key, 21) == 0 ||
+	   strncasecmp("REPLAYGAIN_ALBUM_GAIN", key, 21) == 0 ||
+	   strncasecmp("REPLAYGAIN_TRACK_PEAK", key, 21) == 0 ||
+	   strncasecmp("REPLAYGAIN_ALBUM_PEAK", key, 21) == 0){
+		return true;
+	}
+	return false;
+}
+
 size_t AudioCodec::fillReadBuffer(uint8_t *sd_buf, uint8_t *data, size_t dataLeft, size_t sd_bufsize)
 {//TODO: Sync to 512-Byte blocks, if possible
 
@@ -192,37 +202,28 @@ uint32_t AudioCodec::parseID3(void)
 			if(buf[0] != 0){
 				continue;
 			}
-			if(strncasecmp("REPLAYGAIN_", (char*)buf + 1, 11) == 0){
-				bool isPeak, isAlbum;
-				if(strncasecmp("REPLAYGAIN_TRACK_GAIN", (char*)buf + 1, 21) == 0){
-					isPeak = false; isAlbum = false;
-				}else if(strncasecmp("REPLAYGAIN_ALBUM_GAIN", (char*)buf + 1, 21) == 0){
-					isPeak = false; isAlbum = false;
-				}else if(strncasecmp("REPLAYGAIN_TRACK_PEAK", (char*)buf + 1, 21) == 0){
-					isPeak = true; isAlbum = false;
-				}else if(strncasecmp("REPLAYGAIN_ALBUM_PEAK", (char*)buf + 1, 21) == 0){
-					isPeak = true; isAlbum = true;
-				}else{
-					continue;
-				}
+			if(isReplayGainKey((char*)buf + 1)){
 				float value = atof((char*)buf + 23);
-				if(isPeak){
-					value = min(1, max(0, value));
-					if(isAlbum){
-						replaygain_album_peak = value;
-					}else{
-						replaygain_track_peak = value;
-					}
-				}else{
-					if(isAlbum){
-						replaygain_album_gain_db = value;
-					}else{
-						replaygain_track_gain_db = value;
-					}
-				}
+				setReplayGainValue((char*)buf + 1, value);
 			}
 		}
 	}
 	
 	return id3size;
+}
+
+void AudioCodec::setReplayGainValue(const char *key, float value){
+	if(strncasecmp("REPLAYGAIN_TRACK_GAIN", key, 21) == 0){
+		replaygain_track_gain_db = value;
+	}else if(strncasecmp("REPLAYGAIN_ALBUM_GAIN", key, 21) == 0){
+		replaygain_album_gain_db = value;
+	}else if(strncasecmp("REPLAYGAIN_TRACK_PEAK", key, 21) == 0){
+		replaygain_track_peak = min(1, max(0, value));
+	}else if(strncasecmp("REPLAYGAIN_ALBUM_PEAK", key, 21) == 0){
+		replaygain_album_peak = min(1, max(0, value));
+	}else{
+		Serial.print(__FUNCTION__);
+		Serial.print(" ignoring key ");
+		Serial.println(key);
+	}
 }
