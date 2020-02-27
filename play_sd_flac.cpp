@@ -140,6 +140,8 @@ int AudioPlaySdFlac::play(void)
 		lastError = ERR_CODEC_FORMAT;
 		goto PlayErr;
 	}
+	
+	parseMetadata();
 
 	samplerate = FLAC__stream_decoder_get_sample_rate(hFLACDecoder);
 
@@ -494,6 +496,70 @@ void AudioPlaySdFlac::checkAndFillBuffer(void)
 	if (!NVIC_IS_ACTIVE(IRQ_AUDIOCODEC))
 			NVIC_TRIGGER_INTERRUPT(IRQ_AUDIOCODEC);
 #endif
+}
+
+// FLAC metadata API reads the whole metadata block into memory. The metadata can be up to 16MB
+// So we reimplement metadata parsing in a low-memory-friendly way
+void AudioPlaySdFlac::parseMetadata(void){
+	uint32_t savedPos = fposition();
+	
+	uint32_t metaBlockPos = 4;
+	bool lastMetadataBlock = false;
+	uint8_t buf[4];
+
+	fseek(0);
+	fread(buf, 4);
+	if(strncmp("fLaC", (char*)buf, 4)){
+		goto end;
+	}
+
+	while(!lastMetadataBlock){
+		if(!fseek(metaBlockPos)){
+			goto end;
+		}
+		fread(buf, 4);
+		lastMetadataBlock = buf[0] >> 7;
+		uint32_t blockLen = (buf[1] << 16) | (buf[2] << 8) | buf[3];
+		metaBlockPos += blockLen + 4;
+		uint8_t blockType = buf[0] & 0x7f;
+		Serial.print("block type ");
+		Serial.println(blockType);
+		if(blockType != 4){
+			continue;
+		}
+		
+		uint32_t vendorLen;
+		fread((uint8_t*)&vendorLen, 4);
+		if(!fseek(fposition() + vendorLen)){
+			goto end;
+		}
+		
+		uint32_t numTags;
+		fread((uint8_t*)&numTags, 4);
+		for(uint32_t i = 0; i < numTags; i++){
+			if(fposition() >= metaBlockPos){
+				break;
+			}
+			uint32_t tagLen;
+			fread((uint8_t*)&tagLen, 4);
+			if(tagLen > 49){
+				if(!fseek(fposition() + tagLen)){
+					goto end;
+				}
+				continue;
+			}
+			char tagBuf[tagLen + 1];
+			fread((uint8_t*)tagBuf, tagLen);
+			tagBuf[tagLen] = 0;
+			if(isReplayGainKey(tagBuf)){
+				float value = atof(tagBuf + 22);
+				setReplayGainValue(tagBuf, value);
+			}
+		}
+	}
+	
+end:
+	fseek(savedPos);
 }
 
 void AudioPlaySdFlac::suspendDecoding(void)

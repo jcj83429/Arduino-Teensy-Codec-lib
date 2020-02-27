@@ -79,6 +79,7 @@ protected:
 
 	void update(void);
 	void checkAndFillBuffer(void);
+	void parseMetadata(void);
 	friend void decodeFlac(void) ;
 
 
