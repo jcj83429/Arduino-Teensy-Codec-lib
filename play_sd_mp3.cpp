@@ -285,20 +285,29 @@ bool AudioPlaySdMp3::seek(uint32_t timesec)
 				Serial.println(decode_res);
 				if (decode_res == ERR_MP3_INVALID_FRAMEHEADER) {
 					// keep going to find next frameheader
-					sd_p += 2;
-					sd_left -= 2;
+					sd_p += 1;
+					sd_left -= 1;
 				}
 				validFrameFound = 0;
 				decoded_length[0] = decoded_length[1] = 0;
 			} else {
-				// don't throw away the decoding result
 				MP3GetLastFrameInfo(hMP3Decoder, &mp3FrameInfo);
-				decoded_length[decoding_block] += mp3FrameInfo.outputSamps;
-				if(decoded_length[decoding_block] >= requiredBufSamples()) {
-					decoding_block = 1 - decoding_block;
-					decoded_length[decoding_block] = 0;
+				// For 44100Hz, each decode yields 2304 samples. For 22050Hz, each decode yields 1152 samples
+				// If the decoder got the wrong channel count or sample rate after seeking (i.e. 22050Hz for a 44100Hz file),
+				// it will fill the buffer partially, and the next decode may write past the end of the buffer.
+				if (mp3FrameInfo.nChans != _channels || (uint32_t)mp3FrameInfo.samprate != samplerate) {
+					Serial.println("sample rate or channel count mismatch, treat as decode error");
+					validFrameFound = 0;
+					decoded_length[0] = decoded_length[1] = 0;
+				} else {
+					// don't throw away the decoding result
+					decoded_length[decoding_block] += mp3FrameInfo.outputSamps;
+					if(decoded_length[decoding_block] >= requiredBufSamples()) {
+						decoding_block = 1 - decoding_block;
+						decoded_length[decoding_block] = 0;
+					}
+					validFrameFound++;
 				}
-				validFrameFound++;
 			}
 		}
 
