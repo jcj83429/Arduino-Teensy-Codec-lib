@@ -454,6 +454,7 @@ void AudioPlaySdFlac::update(void)
 				audioblockL->data[j] = *abufptrL++;
 			}
 			transmit(audioblockL, 0);
+			transmit(audioblockL, 1);
 			release(audioblockL);
 		}
 
