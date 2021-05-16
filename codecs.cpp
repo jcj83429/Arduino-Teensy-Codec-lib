@@ -169,18 +169,20 @@ uint32_t AudioCodec::parseID3(void)
 	if(strncmp("ID3", (char*)buf, 3)){
 		return 0;
 	}
-	// flags
-	if(buf[5] & 0xa0){
-		// unsynchronization or experimental
-		return 0;
-	}
-	
+
 	uint32_t id3size = parseID3size(&buf[6]) + 10;
 	uint32_t frameEnd = id3size;
 	if(buf[5] & 0x10){
 		// footer present
 		id3size += 10;
 	}
+
+	// flags
+	if(buf[5] & 0xa0){
+		// unsynchronization or experimental
+		return id3size;
+	}
+
 	uint32_t framePos = 10;
 	if(buf[5] & 0x40){
 		// skip extended header

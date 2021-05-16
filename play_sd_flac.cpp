@@ -510,6 +510,16 @@ void AudioPlaySdFlac::parseMetadata(void){
 
 	fseek(0);
 	fread(buf, 4);
+
+	if(strncmp("ID3", (char*)buf, 3) == 0){
+		// This will seek back to 0 and parse the ID3
+		uint32_t id3size = parseID3();
+		// skip ID3 and parse the FLAC header now
+		fseek(id3size);
+		fread(buf, 4);
+		metaBlockPos = id3size + 4;
+	}
+
 	if(strncmp("fLaC", (char*)buf, 4)){
 		goto end;
 	}
